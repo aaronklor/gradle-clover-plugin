@@ -16,6 +16,8 @@
 package org.gradle.api.plugins.clover
 
 import org.gradle.api.file.FileCollection
+import org.gradle.api.plugins.clover.util.CloverSourceSetUtils
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.TaskAction
 
@@ -27,6 +29,8 @@ import org.gradle.api.tasks.TaskAction
 class GenerateCoverageReportTask extends CloverReportTask {
     String initString
     File buildDir
+    @Input Set<CloverSourceSet> sourceSets
+    @Input Set<CloverSourceSet> testSourceSets
     FileCollection cloverClasspath
     @InputFile File licenseFile
     String filter
@@ -42,7 +46,17 @@ class GenerateCoverageReportTask extends CloverReportTask {
     }
 
     private boolean allowReportGeneration() {
-        isCloverDatabaseExistent()
+        isCloverDatabaseExistent() && existsAllClassesAndBackupDirs()
+    }
+
+    private boolean existsAllClassesAndBackupDirs() {
+        for(CloverSourceSet sourceSet : getSourceSets()) {
+            if(!sourceSet.classesDir.exists() || !sourceSet.backupDir.exists()) {
+                return false
+            }
+        }
+
+        true
     }
 
     private boolean isCloverDatabaseExistent() {
@@ -81,9 +95,49 @@ class GenerateCoverageReportTask extends CloverReportTask {
         logger.info 'Finished generating Clover code coverage report.'
     }
 
+    private void restoreOriginalClasses() {
+        deleteAllClassesDirectories(getSourceSets())
+        deleteAllClassesDirectories(getTestSourceSets())
+        moveAllBackupDirsToClassesDirs(getSourceSets())
+        moveAllBackupDirsToClassesDirs(getTestSourceSets())
+    }
+
+    private void deleteAllClassesDirectories(Set<CloverSourceSet> sourceSets) {
+        for(CloverSourceSet sourceSet : sourceSets) {
+            deleteClassesDirectory(sourceSet.classesDir)
+        }
+    }
+
+    private void deleteClassesDirectory(File classesDir) {
+        ant.delete(includeEmptyDirs: true) {
+            fileset(dir: classesDir.canonicalPath, includes: '**/*')
+        }
+    }
+
+    private void moveAllBackupDirsToClassesDirs(Set<CloverSourceSet> sourceSets) {
+        for(CloverSourceSet sourceSet : sourceSets) {
+            moveBackupToClassesDir(sourceSet.backupDir, sourceSet.classesDir)
+        }
+    }
+
+    private void moveBackupToClassesDir(File backupDir, File classesDir) {
+        if(CloverSourceSetUtils.existsDirectory(backupDir)) {
+            ant.move(file: backupDir.canonicalPath, tofile: classesDir.canonicalPath, failonerror: true)
+        }
+    }
+
     private void writeReport(String outfile, String type) {
+        List<File> testSrcDirs = CloverSourceSetUtils.getSourceDirs(getTestSourceSets())
+
         ant."clover-report"(initString: "${getBuildDir()}/${getInitString()}") {
             current(outfile: outfile, title: getProjectName()) {
+                testSrcDirs.each { testSrcDir ->
+                    ant.testsources(dir: testSrcDir) {
+                        getTestIncludes().each { include ->
+                            ant.include(name: include)
+                        }
+                    }
+                }
                 if(getFilter()) {
                     format(type: type, filter: getFilter())
                 }

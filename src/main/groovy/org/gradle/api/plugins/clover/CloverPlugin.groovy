@@ -141,14 +141,10 @@ class CloverPlugin implements Plugin<Project> {
         instrumentCodeAction.conventionMapping.map('cloverClasspath') { project.configurations.getByName(CONFIGURATION_NAME).asFileTree }
         instrumentCodeAction.conventionMapping.map('testRuntimeClasspath') { getTestRuntimeClasspath(project, testTask).asFileTree }
         instrumentCodeAction.conventionMapping.map('groovyClasspath') { project.configurations.groovy.asFileTree }
-        instrumentCodeAction.conventionMapping.map('classesBackupDir') { getClassesBackupDirectory(project, cloverPluginConvention) }
-        instrumentCodeAction.conventionMapping.map('testClassesBackupDir') { getTestClassesBackupDirectory(project, cloverPluginConvention) }
         instrumentCodeAction.conventionMapping.map('licenseFile') { getLicenseFile(project, cloverPluginConvention) }
         instrumentCodeAction.conventionMapping.map('buildDir') { project.buildDir }
-        instrumentCodeAction.conventionMapping.map('classesDir') { project.sourceSets.main.output.classesDir }
-        instrumentCodeAction.conventionMapping.map('testClassesDir') { testTask.testClassesDir }
-        instrumentCodeAction.conventionMapping.map('srcDirs') { getSourceDirectories(project, cloverPluginConvention) }
-        instrumentCodeAction.conventionMapping.map('testSrcDirs') { getTestSourceDirectories(project, cloverPluginConvention, testTask) }
+        instrumentCodeAction.conventionMapping.map('sourceSets') { getSourceSets(project, cloverPluginConvention) }
+        instrumentCodeAction.conventionMapping.map('testSourceSets') { getTestSourceSets(project, cloverPluginConvention) }
         instrumentCodeAction.conventionMapping.map('sourceCompatibility') { project.sourceCompatibility?.toString() }
         instrumentCodeAction.conventionMapping.map('targetCompatibility') { project.targetCompatibility?.toString() }
         instrumentCodeAction.conventionMapping.map('includes') { getIncludes(project, cloverPluginConvention) }
@@ -164,6 +160,8 @@ class CloverPlugin implements Plugin<Project> {
             generateCoverageReportTask.dependsOn aggregateDatabasesTask
             generateCoverageReportTask.conventionMapping.map('initString') { getInitString(cloverPluginConvention) }
             generateCoverageReportTask.conventionMapping.map('buildDir') { project.buildDir }
+            generateCoverageReportTask.conventionMapping.map('sourceSets') { getSourceSets(project, cloverPluginConvention) }
+            generateCoverageReportTask.conventionMapping.map('testSourceSets') { getTestSourceSets(project, cloverPluginConvention) }
             generateCoverageReportTask.conventionMapping.map('cloverClasspath') { project.configurations.getByName(CONFIGURATION_NAME).asFileTree }
             generateCoverageReportTask.conventionMapping.map('licenseFile') { getLicenseFile(project, cloverPluginConvention) }
             generateCoverageReportTask.conventionMapping.map('targetPercentage') { cloverPluginConvention.targetPercentage }
@@ -241,28 +239,6 @@ class CloverPlugin implements Plugin<Project> {
     }
 
     /**
-     * Gets classes backup directory.
-     *
-     * @param project Project
-     * @param cloverPluginConvention Clover plugin convention
-     * @return Classes backup directory
-     */
-    private File getClassesBackupDirectory(Project project, CloverPluginConvention cloverPluginConvention) {
-        cloverPluginConvention.classesBackupDir ?: new File("${project.sourceSets.main.output.classesDir}-bak")
-    }
-
-    /**
-     * Gets test classes backup directory.
-     *
-     * @param project Project
-     * @param cloverPluginConvention Clover plugin convention
-     * @return Classes backup directory
-     */
-    private File getTestClassesBackupDirectory(Project project, CloverPluginConvention cloverPluginConvention) {
-        cloverPluginConvention.testClassesBackupDir ?: new File("${project.sourceSets.test.output.classesDir}-bak")
-    }
-
-    /**
      * Gets Clover license file.
      *
      * @param project Project
@@ -296,22 +272,33 @@ class CloverPlugin implements Plugin<Project> {
      * @param cloverPluginConvention Clover plugin convention
      * @return Source directories
      */
-    private Set<File> getSourceDirectories(Project project, CloverPluginConvention cloverPluginConvention) {
-        def srcDirs = [] as Set<File>
+    private Set<CloverSourceSet> getSourceSets(Project project, CloverPluginConvention cloverPluginConvention) {
+        def sourceSets = []
 
         if(hasGroovyPlugin(project)) {
-            addExistingSourceDirectories(srcDirs, project.sourceSets.main.java.srcDirs)
-            addExistingSourceDirectories(srcDirs, project.sourceSets.main.groovy.srcDirs)
+            CloverSourceSet cloverSourceSet = new CloverSourceSet()
+            cloverSourceSet.srcDirs.addAll(filterNonExistentDirectories(project.sourceSets.main.java.srcDirs))
+            cloverSourceSet.srcDirs.addAll(filterNonExistentDirectories(project.sourceSets.main.groovy.srcDirs))
+            cloverSourceSet.classesDir = project.sourceSets.main.output.classesDir
+            cloverSourceSet.backupDir = cloverPluginConvention.classesBackupDir ?: new File("${project.sourceSets.main.output.classesDir}-bak")
+            sourceSets << cloverSourceSet
         }
-        else {
-            addExistingSourceDirectories(srcDirs, project.sourceSets.main.java.srcDirs)
+        else if(hasJavaPlugin(project)) {
+            CloverSourceSet cloverSourceSet = new CloverSourceSet()
+            cloverSourceSet.srcDirs.addAll(filterNonExistentDirectories(project.sourceSets.main.java.srcDirs))
+            cloverSourceSet.classesDir = project.sourceSets.main.output.classesDir
+            cloverSourceSet.backupDir = cloverPluginConvention.classesBackupDir ?: new File("${project.sourceSets.main.output.classesDir}-bak")
+            sourceSets << cloverSourceSet
         }
 
-        if(cloverPluginConvention.additionalSourceDirs) {
-            addExistingSourceDirectories(srcDirs, cloverPluginConvention.additionalSourceDirs)
+        if(cloverPluginConvention.additionalSourceSets) {
+            cloverPluginConvention.additionalSourceSets.each { additionalSourceSet ->
+                additionalSourceSet.backupDir = cloverPluginConvention.classesBackupDir ?: new File("${additionalSourceSet.classesDir}-bak")
+                sourceSets << additionalSourceSet
+            }
         }
 
-        srcDirs
+        sourceSets
     }
 
     /**
@@ -322,44 +309,37 @@ class CloverPlugin implements Plugin<Project> {
      * @param cloverPluginConvention Clover plugin convention
      * @return Test source directories
      */
-    private Set<File> getTestSourceDirectories(Project project, CloverPluginConvention cloverPluginConvention, Test testTask) {
-        def testSrcDirs = [] as Set<File>
+    private Set<CloverSourceSet> getTestSourceSets(Project project, CloverPluginConvention cloverPluginConvention) {
+        def testSourceSets = []
 
-        //default test task
-        if (testTask.testSrcDirs as Set<File> == project.sourceSets.test.java.srcDirs) {
-            if(hasGroovyPlugin(project)) {
-                addExistingSourceDirectories(testSrcDirs, project.sourceSets.test.java.srcDirs)
-                addExistingSourceDirectories(testSrcDirs, project.sourceSets.test.groovy.srcDirs)
-            }
-            else if(hasJavaPlugin(project)) {
-                addExistingSourceDirectories(testSrcDirs, project.sourceSets.test.java.srcDirs)
-            }
-        } else {
-            addExistingSourceDirectories(testSrcDirs, testTask.testSrcDirs as Set)
+        if(hasGroovyPlugin(project)) {
+            CloverSourceSet cloverSourceSet = new CloverSourceSet()
+            cloverSourceSet.srcDirs.addAll(filterNonExistentDirectories(project.sourceSets.test.java.srcDirs))
+            cloverSourceSet.srcDirs.addAll(filterNonExistentDirectories(project.sourceSets.test.groovy.srcDirs))
+            cloverSourceSet.classesDir = project.sourceSets.test.output.classesDir
+            cloverSourceSet.backupDir = cloverPluginConvention.testClassesBackupDir ?: new File("${project.sourceSets.test.output.classesDir}-bak")
+            testSourceSets << cloverSourceSet
+        }
+        else if(hasJavaPlugin(project)) {
+            CloverSourceSet cloverSourceSet = new CloverSourceSet()
+            cloverSourceSet.srcDirs.addAll(filterNonExistentDirectories(project.sourceSets.test.java.srcDirs))
+            cloverSourceSet.classesDir = project.sourceSets.test.output.classesDir
+            cloverSourceSet.backupDir = cloverPluginConvention.testClassesBackupDir ?: new File("${project.sourceSets.test.output.classesDir}-bak")
+            testSourceSets << cloverSourceSet
         }
 
-        if(cloverPluginConvention.additionalTestDirs) {
-            addExistingSourceDirectories(testSrcDirs, cloverPluginConvention.additionalTestDirs)
+        if(cloverPluginConvention.additionalTestSourceSets) {
+            cloverPluginConvention.additionalTestSourceSets.each { additionalTestSourceSet ->
+                additionalTestSourceSet.backupDir = cloverPluginConvention.classesBackupDir ?: new File("${additionalTestSourceSet.classesDir}-bak")
+                testSourceSets << additionalTestSourceSet
+            }
         }
 
-        testSrcDirs
+        testSourceSets
     }
 
-    /**
-     * Adds source directories to target Set only if they actually exist.
-     *
-     * @param target Target
-     * @param source Source
-     */
-    private void addExistingSourceDirectories(Set<File> target, Set<File> source) {
-        source.each {
-            if(it.exists()) {
-                target << it
-            }
-            else {
-                log.warn "The specified source directory '$it.canonicalPath' does not exist. It won't be included in Clover instrumentation."
-            }
-        }
+    private Set<File> filterNonExistentDirectories(Set<File> dirs) {
+        dirs.findAll { it.exists() }
     }
 
     /**
