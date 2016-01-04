@@ -206,6 +206,8 @@ class CloverPlugin implements Plugin<Project> {
      * @param task Task
      */
     private void setCloverReportConventionMappings(Project project, CloverPluginConvention cloverPluginConvention, Task task) {
+        task.conventionMapping.map('testResults') { cloverPluginConvention.report.testResults }
+        task.conventionMapping.map('testResultsInclude') { cloverPluginConvention.report.testResultsInclude }
         task.conventionMapping.map('reportsDir') { new File(project.buildDir, 'reports') }
         task.conventionMapping.map('xml') { cloverPluginConvention.report.xml }
         task.conventionMapping.map('json') { cloverPluginConvention.report.json }

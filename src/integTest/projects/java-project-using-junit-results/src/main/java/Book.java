@@ -13,18 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.bmuschko.gradle.clover
-/**
- * Defines Clover report convention.
- *
- * @author Benjamin Muschko
- */
-class CloverReportConvention {
-    File testResults
-    String testResultsInclude = "TEST-*.xml"
-    Boolean xml = true
-    Boolean json = false
-    Boolean html = false
-    Boolean pdf = false
-    String filter
+
+public class Book {
+
+    // tested
+    public boolean open() {
+        return true;
+    }
+
+    // untested
+    public boolean close() {
+        throw new RuntimeException("close blows up!");
+    }
 }

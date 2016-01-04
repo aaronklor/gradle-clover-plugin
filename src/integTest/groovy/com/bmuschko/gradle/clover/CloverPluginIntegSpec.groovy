@@ -59,6 +59,34 @@ class CloverPluginIntegSpec extends Specification {
         cloverSnapshot.exists() == false
     }
 
+
+    def "Build a Java project expecting exceptions"() {
+        given: "a Java project"
+        projectName = 'java-project-expecting-exceptions'
+
+        when: "the Clover report generation task is run"
+        runTasks('clean', 'cloverGenerateReport')
+
+        then: "the Clover coverage database is generated"
+        cloverDb.exists()
+
+        and: "the Clover report is generated and is correct"
+        cloverXmlReport.exists()
+        def coverage = new XmlSlurper().parse(cloverXmlReport)
+        coverage.project.metrics.@classes == '1'
+        coverage.project.metrics.@methods == '2'
+        coverage.project.metrics.@coveredmethods == '1'
+        coverage.testproject.metrics.@classes == '1'
+        coverage.testproject.metrics.@methods == '1'
+        coverage.testproject.metrics.@coveredmethods == '1'
+        cloverHtmlReport.exists()
+        cloverJsonReport.exists()
+        cloverPdfReport.exists()
+
+        and: "the Clover snapshot is not generated because test optimization is not enabled"
+        cloverSnapshot.exists() == false
+    }
+
     def "Build a Java project with disabled instrumentation"() {
         given: "a Java project"
         projectName = 'java-project-disabled-instrumentation'

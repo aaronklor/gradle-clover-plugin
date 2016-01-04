@@ -5,7 +5,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:0.6'
+        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.5'
         //classpath 'org.gradle.api.plugins:gradle-clover-plugin:0.8'
     }
 }
@@ -17,7 +17,7 @@ apply plugin: 'com.jfrog.bintray'
 //apply plugin: 'clover'
 
 group = 'com.bmuschko'
-version = '2.0.1'
+version = '2.0.1-AK-SNAPSHOT'
 defaultTasks 'clean', 'build'
 
 sourceSets {
@@ -171,6 +171,4 @@ bintray {
     }
 }
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '2.1'
-}
+wrapper.gradleVersion = '2.4'
